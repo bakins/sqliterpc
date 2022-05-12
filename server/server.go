@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 	"github.com/twitchtv/twirp"
@@ -16,8 +15,7 @@ import (
 )
 
 type DatabaseServer struct {
-	db             *sql.DB
-	statementCache *statementCache
+	db *sql.DB
 }
 
 var (
@@ -89,8 +87,7 @@ func New(filename string, options ...Option) (*DatabaseServer, error) {
 	// db.SetMaxOpenConns(1)
 
 	s := DatabaseServer{
-		db:             db,
-		statementCache: newStatementCache(db, 1024),
+		db: db,
 	}
 
 	return &s, nil
@@ -197,20 +194,10 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 		twerr := twirp.InternalError(err.Error())
 		return nil, twerr
 	}
+
 	// TODO: prepared statement cache?
 
-	//	stmt, err := s.db.PrepareContext(ctx, req.Sql)
-	stmt, err := s.statementCache.PrepareContext(ctx, req.Sql)
-	if err != nil {
-		// TODO: properly wrap the errors - bad sql should return invalidargument, etc
-		twerr := twirp.InternalError(err.Error())
-		return nil, twerr
-	}
-
-	// defer stmt.Close()
-
-	// rows, err := s.db.QueryContext(ctx, req.Sql, parameters...)
-	rows, err := stmt.QueryContext(ctx, parameters...)
+	rows, err := s.db.QueryContext(ctx, req.Sql, parameters...)
 	if err != nil {
 		// TODO: properly wrap the errors - bad sql should return invalidargument, etc
 		twerr := twirp.InternalError(err.Error())
@@ -436,6 +423,7 @@ func (n *nullBytes) Scan(value interface{}) error {
 	return nil
 }
 
+/*
 type statementCache struct {
 	db    *sql.DB
 	lock  sync.RWMutex
@@ -486,3 +474,4 @@ func (c *statementCache) set(key string, val *sql.Stmt) {
 	c.cache[key] = val
 	c.lock.Unlock()
 }
+*/
