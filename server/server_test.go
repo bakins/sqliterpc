@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -21,10 +22,21 @@ func TestSimple(t *testing.T) {
 	s, err := server.New(file)
 	require.NoError(t, err)
 
-	defer s.Close()
+	defer func() {
+		fmt.Println("calling database close")
+		s.Close()
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
+
+	_, err = s.Exec(
+		ctx,
+		&sqliterpc.ExecRequest{
+			Sql: `DROP TABLE IF EXISTS testing`,
+		},
+	)
+	require.NoError(t, err)
 
 	_, err = s.Exec(
 		ctx,
@@ -288,13 +300,20 @@ func BenchmarkSimple(b *testing.B) {
 	_, err = s.Exec(
 		ctx,
 		&sqliterpc.ExecRequest{
+			Sql: `DROP TABLE IF EXISTS testing`,
+		},
+	)
+	require.NoError(b, err)
+
+	_, err = s.Exec(
+		ctx,
+		&sqliterpc.ExecRequest{
 			Sql: `create table testing (
 				intCol INTEGER,
 				textCol TEXT
 			)`,
 		},
 	)
-
 	require.NoError(b, err)
 
 	_, err = s.Exec(

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 	"github.com/twitchtv/twirp"
@@ -15,7 +16,8 @@ import (
 )
 
 type DatabaseServer struct {
-	db *sql.DB
+	db             *sql.DB
+	statementCache *statementCache
 }
 
 var (
@@ -80,13 +82,15 @@ func New(filename string, options ...Option) (*DatabaseServer, error) {
 	}
 
 	db.SetConnMaxLifetime(-1)
-	db.SetMaxIdleConns(1)
+	db.SetMaxIdleConns(16)
+	db.SetMaxOpenConns(16)
 	// TODO: is this correct? I think we just need to lock on execs
 	// see https://github.com/mattn/go-sqlite3/issues/209 and linked issues
-	db.SetMaxOpenConns(1)
+	// db.SetMaxOpenConns(1)
 
 	s := DatabaseServer{
-		db: db,
+		db:             db,
+		statementCache: newStatementCache(db, 1024),
 	}
 
 	return &s, nil
@@ -195,7 +199,18 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 	}
 	// TODO: prepared statement cache?
 
-	rows, err := s.db.QueryContext(ctx, req.Sql, parameters...)
+	//	stmt, err := s.db.PrepareContext(ctx, req.Sql)
+	stmt, err := s.statementCache.PrepareContext(ctx, req.Sql)
+	if err != nil {
+		// TODO: properly wrap the errors - bad sql should return invalidargument, etc
+		twerr := twirp.InternalError(err.Error())
+		return nil, twerr
+	}
+
+	// defer stmt.Close()
+
+	// rows, err := s.db.QueryContext(ctx, req.Sql, parameters...)
+	rows, err := stmt.QueryContext(ctx, parameters...)
 	if err != nil {
 		// TODO: properly wrap the errors - bad sql should return invalidargument, etc
 		twerr := twirp.InternalError(err.Error())
@@ -419,4 +434,55 @@ func (n *nullBytes) Scan(value interface{}) error {
 	n.Value = val
 
 	return nil
+}
+
+type statementCache struct {
+	db    *sql.DB
+	lock  sync.RWMutex
+	cache map[string]*sql.Stmt
+	max   int
+}
+
+func newStatementCache(db *sql.DB, max int) *statementCache {
+	if max < 0 {
+		max = 0
+	}
+
+	c := statementCache{
+		cache: make(map[string]*sql.Stmt, max),
+		db:    db,
+	}
+
+	return &c
+}
+
+// TODO: allow setting an option on context not to cache
+func (c *statementCache) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
+	if stmt := c.get(query); stmt != nil {
+		return stmt, nil
+	}
+
+	stmt, err := c.db.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	c.set(query, stmt)
+
+	return stmt, nil
+}
+
+func (c *statementCache) get(key string) *sql.Stmt {
+	c.lock.RLock()
+	val := c.cache[key]
+	c.lock.RUnlock()
+
+	return val
+}
+
+// TODO: eviction
+func (c *statementCache) set(key string, val *sql.Stmt) {
+	c.lock.Lock()
+	c.cache[key] = val
+	c.lock.Unlock()
 }
