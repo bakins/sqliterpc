@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -13,7 +14,10 @@ import (
 )
 
 func TestSimple(t *testing.T) {
-	s, err := server.New("file::memory:?cache=shared&_journal_mode=WAL")
+	file := "testing.db"
+	defer os.Remove(file)
+
+	s, err := server.New("file:" + file + "?cache=shared&_journal_mode=WAL")
 	require.NoError(t, err)
 
 	defer s.Close()
@@ -166,7 +170,7 @@ func TestSimple(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	//	// insert using type general null
+	//	insert using type general null
 	_, err = s.Exec(
 		ctx,
 		&sqliterpc.ExecRequest{
@@ -257,6 +261,7 @@ func TestSimple(t *testing.T) {
 
 	// we should get back type specific NULL even when inserting general NULL
 	require.Len(t, resp.Rows[2].Values, 7)
+
 	require.False(t, resp.Rows[2].Values[2].GetBlobValue().Valid)
 
 	require.False(t, resp.Rows[2].Values[3].GetRealValue().Valid)
