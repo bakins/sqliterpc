@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 
-	_ "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/mattn/go-sqlite3"
 	"github.com/twitchtv/twirp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -17,10 +18,63 @@ type DatabaseServer struct {
 	db *sql.DB
 }
 
-var _ sqliterpc.DatabaseService = &DatabaseServer{}
+var (
+	_ sqliterpc.DatabaseService = &DatabaseServer{}
+	_                           = &sqlite3.SQLiteDriver{}
+)
 
-func New(dsn string) (*DatabaseServer, error) {
-	db, err := sql.Open("sqlite3", dsn)
+type Option interface {
+	apply(*config)
+}
+
+type JournalMode string
+
+const (
+	JournalModeWal = JournalMode("WAL")
+)
+
+type CacheMode string
+
+const (
+	CacheModeShared = CacheMode("shared")
+)
+
+type config struct {
+	journal JournalMode
+	cache   CacheMode
+}
+
+// se https://github.com/mattn/go-sqlite3#connection-string
+func (c config) dsn(filename string) string {
+	options := map[string]string{
+		"_journal_mode": string(c.journal),
+		"cache":         string(c.cache),
+	}
+
+	var args []string
+
+	for k, v := range options {
+		args = append(args, k+"="+v)
+	}
+
+	sort.Strings(args)
+
+	dsn := "file:" + filename + "?" + strings.Join(args, "&")
+
+	return dsn
+}
+
+func New(filename string, options ...Option) (*DatabaseServer, error) {
+	cfg := config{
+		journal: JournalModeWal,
+		cache:   CacheModeShared,
+	}
+
+	for _, o := range options {
+		o.apply(&cfg)
+	}
+
+	db, err := sql.Open("sqlite3", cfg.dsn(filename))
 	if err != nil {
 		return nil, err
 	}
@@ -28,6 +82,7 @@ func New(dsn string) (*DatabaseServer, error) {
 	db.SetConnMaxLifetime(-1)
 	db.SetMaxIdleConns(1)
 	// TODO: is this correct? I think we just need to lock on execs
+	// see https://github.com/mattn/go-sqlite3/issues/209 and linked issues
 	db.SetMaxOpenConns(1)
 
 	s := DatabaseServer{
@@ -307,7 +362,6 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 		}
 
 		resp.Rows = append(resp.Rows, &row)
-
 	}
 
 	return &resp, nil

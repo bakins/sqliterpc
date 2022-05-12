@@ -17,7 +17,8 @@ func TestSimple(t *testing.T) {
 	file := "testing.db"
 	defer os.Remove(file)
 
-	s, err := server.New("file:" + file + "?cache=shared&_journal_mode=WAL")
+	// s, err := server.New("file:" + file + "?cache=shared&_journal_mode=WAL")
+	s, err := server.New(file)
 	require.NoError(t, err)
 
 	defer s.Close()
@@ -271,4 +272,85 @@ func TestSimple(t *testing.T) {
 	require.False(t, resp.Rows[2].Values[5].GetBoolValue().Valid)
 
 	require.False(t, resp.Rows[2].Values[6].GetTimeValue().Valid)
+}
+
+func BenchmarkSimple(b *testing.B) {
+	file := "testing.db"
+	defer os.Remove(file)
+
+	s, err := server.New(file)
+	require.NoError(b, err)
+
+	defer s.Close()
+
+	ctx := context.Background()
+
+	_, err = s.Exec(
+		ctx,
+		&sqliterpc.ExecRequest{
+			Sql: `create table testing (
+				intCol INTEGER,
+				textCol TEXT
+			)`,
+		},
+	)
+
+	require.NoError(b, err)
+
+	_, err = s.Exec(
+		ctx,
+		&sqliterpc.ExecRequest{
+			Sql: `insert into testing (intCol, textCol) values(?, ?)`,
+			Parameters: []*sqliterpc.Value{
+				{
+					Kind: &sqliterpc.Value_IntegerValue{
+						IntegerValue: &sqliterpc.IntergerValue{
+							Value: 10,
+							Valid: true,
+						},
+					},
+				},
+				{
+					Kind: &sqliterpc.Value_TextValue{
+						TextValue: &sqliterpc.TextValue{
+							Value: "text-value",
+							Valid: true,
+						},
+					},
+				},
+			},
+		},
+	)
+
+	require.NoError(b, err)
+
+	req := &sqliterpc.QueryRequest{
+		Sql: "select * from testing where intCol = ?",
+		Parameters: []*sqliterpc.Value{
+			{
+				Kind: &sqliterpc.Value_IntegerValue{
+					IntegerValue: &sqliterpc.IntergerValue{
+						Value: 10,
+						Valid: true,
+					},
+				},
+			},
+		},
+	}
+
+	b.ResetTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			resp, err := s.Query(ctx, req)
+			// cannot use require as it does allocations
+			if err != nil {
+				b.Error(err)
+			}
+
+			if len(resp.Rows) != 1 {
+				b.Errorf("unexpected number of rows %d", len(resp.Rows))
+			}
+		}
+	})
 }
