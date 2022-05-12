@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+cd "$(dirname "$SCRIPT_DIR")"
+
+buf generate
+
+#mkdir -p v0
+#mv bakins/twirp/reflection/v0/*.go ./v0

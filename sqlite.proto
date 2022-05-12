@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package sqlite.rpc.v0;
+
+option go_package = "github.com/bakins/sqliterpc";
+
+import "google/protobuf/timestamp.proto";
+
+service DatabaseService {
+  rpc Exec(ExecRequest) returns (ExecResponse);
+  rpc Query(QueryRequest) returns (QueryResponse);
+}
+
+// `Type` indicates the type of a sqlite value.
+message Type {
+  // code is the sqlite type
+  TypeCode code = 1;
+}
+
+// `TypeCode` indicates the type of a sqlite value.
+enum TypeCode {
+  TYPE_CODE_UNSPECIFIED = 0;
+  TYPE_CODE_INTEGER = 1;
+  TYPE_CODE_TEXT = 2;
+  TYPE_CODE_BLOB = 3;
+  TYPE_CODE_REAL = 4;
+  TYPE_CODE_NUMERIC = 5;
+  TYPE_CODE_BOOL = 6;
+  TYPE_CODE_TIME = 7;
+  TYPE_CODE_NULL = 8;
+}
+
+// `Value` indicates the value of a parameter or returned column.
+message Value {
+  oneof kind {
+    IntergerValue integer_value = 1;
+    TextValue text_value = 2;
+    BlobValue blob_value = 3;
+    RealValue real_value = 4;
+    NumericValue numeric_value = 5;
+    BoolValue bool_value = 6;
+    TimeValue time_value = 7;
+    NullValue null_value = 8;
+  }
+}
+
+message IntergerValue {
+  int64 value = 1;
+  bool valid = 2;
+}
+
+message TextValue {
+  string value = 1;
+  bool valid = 2;
+}
+
+message BlobValue {
+  bytes value = 1;
+  bool valid = 2;
+}
+
+message RealValue {
+  double value = 1;
+  bool valid = 2;
+}
+
+message NumericValue {
+  double value = 1;
+  bool valid = 2;
+}
+
+message BoolValue {
+  bool value = 1;
+  bool valid = 2;
+}
+
+message TimeValue {
+  google.protobuf.Timestamp value = 1;
+  bool valid = 2;
+}
+
+message NullValue {
+  // value and valid are ignored - they are always treated as false
+  bool value = 1;
+  bool valid = 2;
+}
+
+message ListValue {
+  // Repeated field of dynamically typed values.
+  repeated Value values = 1;
+}
+
+message ExecRequest {
+  string sql = 1;
+  repeated Value parameters = 2;
+}
+
+message ExecResponse {
+  int64 last_insert_id = 1;
+  int64 rows_affected = 2;
+}
+
+message QueryRequest {
+  string sql = 1;
+  repeated Value parameters = 2;
+}
+
+message QueryResponse {
+  // column types
+  repeated TypeCode types = 1;
+  // returned values
+  repeated ListValue rows = 2;
+}
