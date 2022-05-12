@@ -170,7 +170,7 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 		code := databaseTypeConvSqlite(t.DatabaseTypeName())
 		if code == sqliterpc.TypeCode_TYPE_CODE_NULL {
 			// can you even declare a column as type NULL?
-			twerr := twirp.InternalError("unable to handle NULL column type")
+			twerr := twirp.InternalErrorf("unable to handle column type %q", t.DatabaseTypeName())
 			return nil, twerr
 		}
 		resp.Types[i] = code
@@ -188,8 +188,7 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 			case sqliterpc.TypeCode_TYPE_CODE_TEXT:
 				scanTarget[i] = &sql.NullString{}
 			case sqliterpc.TypeCode_TYPE_CODE_BLOB:
-				var b []byte
-				scanTarget[i] = &b
+				scanTarget[i] = &nullBytes{}
 			case sqliterpc.TypeCode_TYPE_CODE_REAL:
 				scanTarget[i] = &sql.NullFloat64{}
 			case sqliterpc.TypeCode_TYPE_CODE_NUMERIC:
@@ -240,19 +239,13 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 				}
 
 			case sqliterpc.TypeCode_TYPE_CODE_BLOB:
-				s := scanTarget[i].(*[]byte)
-
-				v := sqliterpc.BlobValue{
-					Valid: s != nil,
-				}
-
-				if s != nil {
-					v.Value = *s
-				}
-
+				s := scanTarget[i].(*nullBytes)
 				row.Values[i] = &sqliterpc.Value{
 					Kind: &sqliterpc.Value_BlobValue{
-						BlobValue: &v,
+						BlobValue: &sqliterpc.BlobValue{
+							Value: s.Value,
+							Valid: s.Valid,
+						},
 					},
 				}
 
@@ -299,6 +292,7 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 				if s.Valid {
 					v.Value = timestamppb.New(s.Time)
 				}
+
 				row.Values[i] = &sqliterpc.Value{
 					Kind: &sqliterpc.Value_TimeValue{
 						TimeValue: &v,
@@ -319,7 +313,7 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 	return &resp, nil
 }
 
-// from https://github.com/mattn/go-sqlite3/blob/2df077b74c66723d9b44d01c8db88e74191bdd0e/sqlite3_type.go#L80
+// based on https://github.com/mattn/go-sqlite3/blob/2df077b74c66723d9b44d01c8db88e74191bdd0e/sqlite3_type.go#L80
 func databaseTypeConvSqlite(t string) sqliterpc.TypeCode {
 	if strings.Contains(t, "INT") {
 		return sqliterpc.TypeCode_TYPE_CODE_INTEGER
@@ -343,9 +337,32 @@ func databaseTypeConvSqlite(t string) sqliterpc.TypeCode {
 		strings.Contains(t, "DECIMAL") {
 		return sqliterpc.TypeCode_TYPE_CODE_NUMERIC
 	}
-	if t == "BOOLEAN" {
+	if t == "BOOLEAN" || t == "BOOL" {
 		return sqliterpc.TypeCode_TYPE_CODE_BOOL
 	}
 
 	return sqliterpc.TypeCode_TYPE_CODE_NULL
+}
+
+type nullBytes struct {
+	Value []byte
+	Valid bool
+}
+
+func (n *nullBytes) Scan(value interface{}) error {
+	if value == nil {
+		n.Value, n.Valid = nil, false
+		return nil
+	}
+
+	n.Valid = true
+
+	val, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("cannot convert %T to []bytes", value)
+	}
+
+	n.Value = val
+
+	return nil
 }
