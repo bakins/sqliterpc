@@ -2,12 +2,14 @@ package driver
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -320,12 +322,69 @@ func (r *rows) Columns() []string {
 	return out
 }
 
-// TODO: implement RowsColumnTypeDatabaseTypeName and RowsColumnTypeScanType and ColumnTypeNullable
-
 func (r *rows) Close() error {
 	r.response = nil
 
 	return nil
+}
+
+// see https://github.com/mattn/go-sqlite3/blob/v1.14.13/sqlite3_type.go#L37
+func (r *rows) ColumnTypeNullable(index int) (nullable, ok bool) {
+	return true, true
+}
+
+// see https://github.com/mattn/go-sqlite3/blob/v1.14.13/sqlite3_type.go#L41
+func (r *rows) ColumnTypeScanType(index int) reflect.Type {
+	if index >= len(r.response.Columns) {
+		return reflect.TypeOf(new(interface{}))
+	}
+
+	switch r.response.Columns[index].Type {
+	case sqliterpc.TypeCode_TYPE_CODE_INTEGER:
+		return reflect.TypeOf(sql.NullInt64{})
+	case sqliterpc.TypeCode_TYPE_CODE_TEXT:
+		return reflect.TypeOf(sql.NullString{})
+	case sqliterpc.TypeCode_TYPE_CODE_BLOB:
+		return reflect.TypeOf(sql.RawBytes{})
+	case sqliterpc.TypeCode_TYPE_CODE_REAL:
+		return reflect.TypeOf(sql.NullFloat64{})
+	case sqliterpc.TypeCode_TYPE_CODE_NUMERIC:
+		return reflect.TypeOf(sql.NullFloat64{})
+	case sqliterpc.TypeCode_TYPE_CODE_BOOL:
+		return reflect.TypeOf(sql.NullBool{})
+	case sqliterpc.TypeCode_TYPE_CODE_TIME:
+		return reflect.TypeOf(sql.NullTime{})
+	default:
+		return reflect.TypeOf(new(interface{}))
+	}
+}
+
+func (r *rows) RowsColumnTypeDatabaseTypeName(index int) string {
+	if index >= len(r.response.Columns) {
+		return ""
+	}
+
+	switch r.response.Columns[index].Type {
+	case sqliterpc.TypeCode_TYPE_CODE_INTEGER:
+		return "INTEGER"
+	case sqliterpc.TypeCode_TYPE_CODE_TEXT:
+		return "TEXT"
+	case sqliterpc.TypeCode_TYPE_CODE_BLOB:
+		return "BLOB"
+	case sqliterpc.TypeCode_TYPE_CODE_REAL:
+		return "REAL"
+	case sqliterpc.TypeCode_TYPE_CODE_NUMERIC:
+		return "NUMERIC"
+	case sqliterpc.TypeCode_TYPE_CODE_BOOL:
+		return "BOOL"
+	case sqliterpc.TypeCode_TYPE_CODE_TIME:
+		return "TIME"
+	case sqliterpc.TypeCode_TYPE_CODE_NULL:
+		return "NULL"
+	default:
+		return ""
+
+	}
 }
 
 func (r *rows) Next(dest []driver.Value) error {
