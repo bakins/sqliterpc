@@ -89,7 +89,7 @@ func (c *connection) Prepare(query string) (driver.Stmt, error) {
 	return c.PrepareContext(context.Background(), query)
 }
 
-var ErrConnectionClosed = errors.New("conenction closed")
+var ErrConnectionClosed = errors.New("connection closed")
 
 func (c *connection) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
 	if c.client == nil {
