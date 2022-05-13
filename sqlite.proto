@@ -107,7 +107,12 @@ message QueryRequest {
 
 message QueryResponse {
   // column types
-  repeated TypeCode types = 1;
+  repeated Column columns = 1;
   // returned values
   repeated ListValue rows = 2;
+}
+
+message Column {
+  TypeCode type = 1;
+  string name = 2;
 }

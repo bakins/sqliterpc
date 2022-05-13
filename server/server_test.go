@@ -2,7 +2,6 @@ package server_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -22,10 +21,7 @@ func TestSimple(t *testing.T) {
 	s, err := server.New(file)
 	require.NoError(t, err)
 
-	defer func() {
-		fmt.Println("calling database close")
-		s.Close()
-	}()
+	defer s.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()

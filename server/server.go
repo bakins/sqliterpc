@@ -220,7 +220,7 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 	}
 
 	resp := sqliterpc.QueryResponse{
-		Types: make([]sqliterpc.TypeCode, len(types)),
+		Columns: make([]*sqliterpc.Column, len(types)),
 	}
 
 	for i, t := range types {
@@ -230,7 +230,13 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 			twerr := twirp.InternalErrorf("unable to handle column type %q", t.DatabaseTypeName())
 			return nil, twerr
 		}
-		resp.Types[i] = code
+
+		name := t.Name()
+
+		resp.Columns[i] = &sqliterpc.Column{
+			Type: code,
+			Name: name,
+		}
 	}
 
 	// avert your eyes! this is clunky and needs some refactoring
@@ -238,8 +244,8 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 		scanTarget := make([]interface{}, len(types))
 
 		// see https://github.com/mattn/go-sqlite3/blob/2df077b74c66723d9b44d01c8db88e74191bdd0e/sqlite3_type.go#L58
-		for i, t := range resp.Types {
-			switch t {
+		for i, t := range resp.Columns {
+			switch t.Type {
 			case sqliterpc.TypeCode_TYPE_CODE_INTEGER:
 				scanTarget[i] = &sql.NullInt64{}
 			case sqliterpc.TypeCode_TYPE_CODE_TEXT:
@@ -271,8 +277,8 @@ func (s *DatabaseServer) Query(ctx context.Context, req *sqliterpc.QueryRequest)
 			Values: make([]*sqliterpc.Value, len(types)),
 		}
 
-		for i, t := range resp.Types {
-			switch t {
+		for i, t := range resp.Columns {
+			switch t.Type {
 			case sqliterpc.TypeCode_TYPE_CODE_INTEGER:
 				s := scanTarget[i].(*sql.NullInt64)
 				row.Values[i] = &sqliterpc.Value{
